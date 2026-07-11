@@ -17,7 +17,7 @@ description:
   - Setting ACLs via C(/access/acls) to grant permission to interact with objects.
 attributes:
   check_mode:
-    support: none
+    support: full
   diff_mode:
     support: none
 options:
@@ -136,7 +136,6 @@ def module_args():
 
 def module_options():
     return dict(
-        supports_check_mode=False,
         required_if=[
             ["state", "present", ["path", "roleid", "type", "ugid"]],
             ["state", "absent", ["path"]],
@@ -158,6 +157,9 @@ class ProxmoxAccessACLAnsible(ProxmoxAnsible):
         if self._filter_matching_aces(existing_acls, desired):
             return False
 
+        if self.module.check_mode:
+            return True
+
         payload = _build_put_payload(
             {
                 "path": desired["path"],
@@ -176,6 +178,9 @@ class ProxmoxAccessACLAnsible(ProxmoxAnsible):
 
         if not to_remove:
             return False
+
+        if self.module.check_mode:
+            return True
 
         for ace in to_remove:
             payload = _build_put_payload(
@@ -218,8 +223,13 @@ def run_module():
             r = proxmox.delete(existing_acls, desired_ace)
 
         result["changed"] = r
-        if r:
+        if r and not proxmox.module.check_mode:
             result["new_acls"] = proxmox._get_acls()
+        elif r and state == "present":
+            result["new_acls"] = result["old_acls"] + [desired_ace]
+        elif r and state == "absent":
+            result["new_acls"] = [ace for ace in existing_acls if not _ace_matches(ace, desired_ace)]
+
     except Exception as e:
         module.fail_json(msg=str(e), **result)
 

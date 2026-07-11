@@ -31,6 +31,8 @@ API = {
     "api_host": "127.0.0.1",
 }
 
+CHECK_MODE = {"_ansible_check_mode": True}
+
 
 class TestProxmoxAccessACLModule(ModuleTestCase):
     def setUp(self):
@@ -59,6 +61,17 @@ class TestProxmoxAccessACLModule(ModuleTestCase):
         assert self.mock_get.call_count == 1
         assert self.mock_put.call_count == 0
 
+    def test_present_ace_already_exists_check_mode(self):
+        with set_module_args({**API, "state": "present", **ACE, **CHECK_MODE}), pytest.raises(
+            AnsibleExitJson
+        ) as exc_info:
+            proxmox_access_acl.main()
+
+        result = exc_info.value.args[0]
+        assert result["changed"] is False
+        assert self.mock_get.call_count == 1
+        assert self.mock_put.call_count == 0
+
     def test_present_ace_does_not_exist(self):
         with set_module_args({**API, "state": "present", **ACE, "path": "/vms/101"}), pytest.raises(
             AnsibleExitJson
@@ -70,6 +83,19 @@ class TestProxmoxAccessACLModule(ModuleTestCase):
         assert self.mock_get.call_count == 2  # noqa: PLR2004
         assert self.mock_put.call_count == 1
 
+    def test_present_ace_does_not_exist_check_mode(self):
+        with set_module_args({**API, "state": "present", **ACE, "path": "/vms/101", **CHECK_MODE}), pytest.raises(
+            AnsibleExitJson
+        ) as exc_info:
+            proxmox_access_acl.main()
+
+        result = exc_info.value.args[0]
+        assert result["changed"] is True
+        assert result["old_acls"] == [ACE]
+        assert result["new_acls"] == [ACE, {**ACE, "path": "/vms/101"}]
+        assert self.mock_get.call_count == 1  # noqa: PLR2004
+        assert self.mock_put.call_count == 0
+
     def test_absent_ace_exists(self):
         with set_module_args({**API, "state": "absent", **ACE}), pytest.raises(AnsibleExitJson) as exc_info:
             proxmox_access_acl.main()
@@ -79,8 +105,32 @@ class TestProxmoxAccessACLModule(ModuleTestCase):
         assert self.mock_get.call_count == 2  # noqa: PLR2004
         assert self.mock_put.call_count == 1
 
+    def test_absent_ace_exists_check_mode(self):
+        with set_module_args({**API, "state": "absent", **ACE, **CHECK_MODE}), pytest.raises(
+            AnsibleExitJson
+        ) as exc_info:
+            proxmox_access_acl.main()
+
+        result = exc_info.value.args[0]
+        assert result["changed"] is True
+        assert result["old_acls"] == [ACE]
+        assert result["new_acls"] == []
+        assert self.mock_get.call_count == 1  # noqa: PLR2004
+        assert self.mock_put.call_count == 0
+
     def test_absent_ace_does_not_exist(self):
         with set_module_args({**API, "state": "absent", **ACE, "path": "/vms/101"}), pytest.raises(
+            AnsibleExitJson
+        ) as exc_info:
+            proxmox_access_acl.main()
+
+        result = exc_info.value.args[0]
+        assert result["changed"] is False
+        assert self.mock_get.call_count == 1
+        assert self.mock_put.call_count == 0
+
+    def test_absent_ace_does_not_exist_check_mode(self):
+        with set_module_args({**API, "state": "absent", **ACE, "path": "/vms/101", **CHECK_MODE}), pytest.raises(
             AnsibleExitJson
         ) as exc_info:
             proxmox_access_acl.main()
