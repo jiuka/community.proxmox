@@ -19,7 +19,7 @@ attributes:
   check_mode:
     support: full
   diff_mode:
-    support: none
+    support: full
 options:
   state:
     description:
@@ -229,6 +229,12 @@ def run_module():
             result["new_acls"] = result["old_acls"] + [desired_ace]
         elif r and state == "absent":
             result["new_acls"] = [ace for ace in existing_acls if not _ace_matches(ace, desired_ace)]
+
+        if r and module._diff:
+            result["diff"] = dict(
+                before=result["old_acls"],
+                after=result["new_acls"],
+            )
 
     except Exception as e:
         module.fail_json(msg=str(e), **result)

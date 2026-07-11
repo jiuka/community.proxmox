@@ -32,6 +32,7 @@ API = {
 }
 
 CHECK_MODE = {"_ansible_check_mode": True}
+DIFF_MODE = {"_ansible_diff": True}
 
 
 class TestProxmoxAccessACLModule(ModuleTestCase):
@@ -45,6 +46,26 @@ class TestProxmoxAccessACLModule(ModuleTestCase):
         self.mock_put = patch.object(proxmox_access_acl.ProxmoxAccessACLAnsible, "_put_acl").start()
 
         self.mock_get.return_value = [ACE]
+
+        def _put_side_effect(**data):
+            delete = data.pop("delete", 0)
+            data["roleid"] = data.pop("roles")
+            if "users" in data:
+                data["type"] = "user"
+                data["ugid"] = data.pop("users")
+            elif "groups" in data:
+                data["type"] = "group"
+                data["ugid"] = data.pop("groups")
+            elif "token" in data:
+                data["type"] = "token"
+                data["ugid"] = data.pop("tokens")
+            self.mock_get.return_value = self.mock_get.return_value.copy()
+            if delete == 0:
+                self.mock_get.return_value.append(data)
+            else:
+                self.mock_get.return_value.remove(data)
+
+        self.mock_put.side_effect = _put_side_effect
 
     def tearDown(self):
         self.connect_mock.stop()
@@ -96,6 +117,19 @@ class TestProxmoxAccessACLModule(ModuleTestCase):
         assert self.mock_get.call_count == 1  # noqa: PLR2004
         assert self.mock_put.call_count == 0
 
+    def test_present_ace_does_not_exist_diff_mode(self):
+        with set_module_args({**API, "state": "present", **ACE, "path": "/vms/101", **DIFF_MODE}), pytest.raises(
+            AnsibleExitJson
+        ) as exc_info:
+            proxmox_access_acl.main()
+
+        result = exc_info.value.args[0]
+        assert result["changed"] is True
+        assert result["old_acls"] == [ACE]
+        assert result["new_acls"] == [ACE, {**ACE, "path": "/vms/101"}]
+        assert self.mock_get.call_count == 2  # noqa: PLR2004
+        assert self.mock_put.call_count == 1
+
     def test_absent_ace_exists(self):
         with set_module_args({**API, "state": "absent", **ACE}), pytest.raises(AnsibleExitJson) as exc_info:
             proxmox_access_acl.main()
@@ -117,6 +151,18 @@ class TestProxmoxAccessACLModule(ModuleTestCase):
         assert result["new_acls"] == []
         assert self.mock_get.call_count == 1  # noqa: PLR2004
         assert self.mock_put.call_count == 0
+
+    def test_absent_ace_exists_diff_mode(self):
+        with set_module_args({**API, "state": "absent", **ACE, **DIFF_MODE}), pytest.raises(
+            AnsibleExitJson
+        ) as exc_info:
+            proxmox_access_acl.main()
+
+        result = exc_info.value.args[0]
+        assert result["changed"] is True
+        assert result["diff"] == dict(before=[ACE], after=[])
+        assert self.mock_get.call_count == 2  # noqa: PLR2004
+        assert self.mock_put.call_count == 1
 
     def test_absent_ace_does_not_exist(self):
         with set_module_args({**API, "state": "absent", **ACE, "path": "/vms/101"}), pytest.raises(
